@@ -1,125 +1,134 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Segurança WebRTC</title>
+    <title>Segurança Web - v2.0</title>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #222; color: #fff; text-align: center; margin: 0; padding: 20px; }
-        h1 { font-size: 1.5rem; margin-bottom: 20px; }
+        body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 20px; }
         .hidden { display: none; }
-        .btn { padding: 15px 30px; font-size: 1.2rem; margin: 10px; border: none; border-radius: 8px; cursor: pointer; width: 80%; max-width: 300px; }
+        .btn { padding: 15px 25px; font-size: 1rem; margin: 10px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-cam { background: #e74c3c; color: white; }
         .btn-mon { background: #3498db; color: white; }
-        input { padding: 10px; font-size: 1.2rem; border-radius: 5px; border: none; margin-bottom: 10px; width: 80%; max-width: 300px; text-align: center; }
-        video { width: 100%; max-width: 600px; border-radius: 10px; background: #000; margin-top: 20px; border: 2px solid #555; }
-        .info-box { background: #333; padding: 15px; border-radius: 8px; margin: 20px auto; max-width: 400px; word-break: break-all; }
-        .status { color: #f1c40f; margin-top: 10px; }
+        .btn-flip { background: #9b59b6; color: white; margin-top: 10px; }
+        input { padding: 12px; font-size: 1.1rem; border-radius: 5px; border: none; margin-bottom: 10px; width: 80%; max-width: 300px; text-align: center; }
+        video { width: 100%; max-width: 500px; border-radius: 12px; background: #000; margin-top: 15px; border: 2px solid #444; transform: scaleX(1); }
+        .info-box { background: #2c3e50; padding: 15px; border-radius: 8px; margin: 15px auto; max-width: 400px; border: 1px solid #34495e; }
+        .status { color: #f1c40f; font-weight: bold; margin: 10px 0; }
     </style>
 </head>
 <body>
 
     <div id="menu">
-        <h1>Escolha o modo</h1>
-        <button class="btn btn-cam" onclick="startCamera()">📹 Sou a Câmera</button>
-        <button class="btn btn-mon" onclick="startMonitor()">📺 Sou o Monitor</button>
+        <h1>Sistema de Monitoramento</h1>
+        <button class="btn btn-cam" onclick="startCamera()">📹 MODO CÂMERA</button><br>
+        <button class="btn btn-mon" onclick="startMonitor()">📺 MODO MONITOR</button>
     </div>
 
     <div id="camera-interface" class="hidden">
-        <h2>Modo Câmera</h2>
+        <h2>Transmissão Ativa</h2>
         <div class="info-box">
-            <p>Seu ID para conexão:</p>
-            <h3 id="my-id">Gerando ID...</h3>
+            <p>ID da Câmera (digite no monitor):</p>
+            <h3 id="my-id" style="font-size: 1.8rem; color: #2ecc71;">Gerando...</h3>
         </div>
-        <p class="status" id="cam-status">Aguardando conexão...</p>
-        <video id="local-video" autoplay playsinline muted></video>
+        <p class="status" id="cam-status">Aguardando monitor...</p>
+        <video id="local-video" autoplay playsinline muted></video><br>
+        <button class="btn btn-flip" onclick="flipCamera()">🔄 Girar Câmera</button>
     </div>
 
     <div id="monitor-interface" class="hidden">
-        <h2>Modo Monitor</h2>
+        <h2>Monitoramento</h2>
         <div class="info-box">
-            <p>Insira o ID da Câmera:</p>
-            <input type="text" id="remote-id-input" placeholder="Ex: cam-12345">
-            <button class="btn btn-mon" onclick="connectToCamera()">Conectar</button>
+            <input type="text" id="remote-id-input" placeholder="Digite o ID da câmera">
+            <button class="btn btn-mon" style="width: 80%;" onclick="connectToCamera()">CONECTAR AGORA</button>
         </div>
-        <p class="status" id="mon-status">Desconectado</p>
+        <p class="status" id="mon-status">Aguardando ID...</p>
         <video id="remote-video" autoplay playsinline></video>
     </div>
 
     <script>
         let peer = null;
-        
-        // Função para gerar ID aleatório curto
-        function generateId() {
-            return 'cam-' + Math.floor(Math.random() * 100000);
+        let currentStream = null;
+        let useFrontCamera = true;
+
+        // Configuração de Servidores para atravessar firewalls (Ajuste de Conexão)
+        const peerConfig = {
+            config: {
+                'iceServers': [
+                    { url: 'stun:stun.l.google.com:19302' },
+                    { url: 'stun:stun1.l.google.com:19302' }
+                ]
+            }
+        };
+
+        // --- FUNÇÕES DA CÂMERA ---
+        async function getStream() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            const constraints = {
+                video: { facingMode: useFrontCamera ? "user" : "environment" },
+                audio: true
+            };
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            document.getElementById('local-video').srcObject = currentStream;
+            return currentStream;
         }
 
-        // --- LÓGICA DA CÂMERA ---
-        function startCamera() {
+        async function startCamera() {
             document.getElementById('menu').classList.add('hidden');
             document.getElementById('camera-interface').classList.remove('hidden');
+            
+            const camId = 'cam-' + Math.floor(Math.random() * 9000 + 1000);
+            document.getElementById('my-id').innerText = camId;
 
-            const id = generateId();
-            document.getElementById('my-id').innerText = id;
+            peer = new Peer(camId, peerConfig);
+            const stream = await getStream();
 
-            // Inicializa o PeerJS com ID específico
-            peer = new Peer(id);
-
-            peer.on('open', (id) => {
-                console.log('ID da Câmera:', id);
+            peer.on('call', (call) => {
+                call.answer(stream);
+                document.getElementById('cam-status').innerText = "🟢 MONITOR CONECTADO!";
+                document.getElementById('cam-status').style.color = "#2ecc71";
             });
-
-            // Acessar câmera e microfone
-            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                .then((stream) => {
-                    const video = document.getElementById('local-video');
-                    video.srcObject = stream;
-
-                    // Quando receber uma chamada, atende enviando o stream
-                    peer.on('call', (call) => {
-                        call.answer(stream); // Responde com o vídeo/áudio
-                        document.getElementById('cam-status').innerText = "🟢 Monitor Conectado!";
-                        document.getElementById('cam-status').style.color = "#2ecc71";
-                    });
-                })
-                .catch((err) => {
-                    console.error('Erro ao acessar câmera:', err);
-                    alert('Erro: Permissão de câmera negada ou dispositivo incompatível.');
-                });
         }
 
-        // --- LÓGICA DO MONITOR ---
+        async function flipCamera() {
+            useFrontCamera = !useFrontCamera;
+            const stream = await getStream();
+            // Avisar ao peer para atualizar o stream se houver chamada ativa (opcional, melhor reconectar)
+            alert("Câmera alterada! Se a imagem travar no monitor, clique em conectar novamente.");
+        }
+
+        // --- FUNÇÕES DO MONITOR ---
         function startMonitor() {
             document.getElementById('menu').classList.add('hidden');
             document.getElementById('monitor-interface').classList.remove('hidden');
-            
-            // Monitor não precisa de ID fixo, o Peer gera um automático
-            peer = new Peer(); 
+            peer = new Peer(peerConfig);
         }
 
         function connectToCamera() {
-            const remoteId = document.getElementById('remote-id-input').value;
-            if (!remoteId) return alert('Digite o ID da câmera');
+            const remoteId = document.getElementById('remote-id-input').value.trim();
+            if (!remoteId) return alert('Insira o ID');
 
-            document.getElementById('mon-status').innerText = "Tentando conectar...";
-
-            const conn = peer.connect(remoteId);
-
-            // Inicia a chamada para pedir o vídeo
-            const call = peer.call(remoteId, null); // Chama sem enviar vídeo, apenas para receber
+            document.getElementById('mon-status').innerText = "Tentando conexão direta...";
+            
+            // Faz a chamada para a câmera
+            const call = peer.call(remoteId, null); 
 
             call.on('stream', (remoteStream) => {
+                document.getElementById('mon-status').innerText = "🟢 VÍDEO RECEBIDO!";
+                document.getElementById('mon-status').style.color = "#2ecc71";
                 const video = document.getElementById('remote-video');
                 video.srcObject = remoteStream;
-                document.getElementById('mon-status').innerText = "🟢 Conectado à Câmera";
-                document.getElementById('mon-status').style.color = "#2ecc71";
             });
 
-            call.on('error', (err) => {
-                console.error(err);
-                alert('Erro na conexão. Verifique o ID.');
-            });
+            setTimeout(() => {
+                if (document.getElementById('mon-status').innerText.includes("Tentando")) {
+                    document.getElementById('mon-status').innerText = "❌ Falha. Verifique o ID ou se a câmera está aberta.";
+                }
+            }, 10000);
         }
     </script>
 </body>
